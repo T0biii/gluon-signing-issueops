@@ -87,7 +87,7 @@ jobs:
           FIRMWARE_BASE_URL: ${{ vars.FIRMWARE_BASE_URL }}
       - name: Install ecdsautils
         run: |
-          sudo apt-get update && sudo apt-get install -y build-essential autoconf automake libtool libuecc-dev
+          sudo apt-get update && sudo apt-get install -y build-essential cmake libuecc-dev
           curl -fsSL -o ecdsautils.tar.gz https://github.com/freifunk-gluon/ecdsautils/archive/refs/tags/${ECDSAUTILS_VERSION}.tar.gz
           tar -xzf ecdsautils.tar.gz
           cd ecdsautils-${ECDSAUTILS_VERSION#v} && mkdir build && cd build && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 .. && make && sudo make install
@@ -100,6 +100,7 @@ jobs:
           cat manifest
         env:
           PRIVATE_KEY: ${{ secrets.FIRMWARE_SIGNING_KEY }}
+          LD_LIBRARY_PATH: /usr/local/lib
       - name: Post signature as comment
         uses: actions/github-script@v7
         with:
