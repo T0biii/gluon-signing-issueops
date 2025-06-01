@@ -25,27 +25,35 @@ jobs:
               repo: context.repo.repo,
               content: '+1'
             })
-      - name: Extract issue data
-        id: issue
+      - name: Parse issue form
+        id: form
+        uses: issue-ops/parser@v1
+        with:
+          issue-form-template: firmware-signing.yml
+          body: ${{ github.event.issue.body }}
+      - name: Validate issue data
+        id: validate
         uses: actions/github-script@v7
         with:
           script: |
-            const issue = context.payload.issue;
-            const body = issue.body;
-            const versionMatch = body.match(/version:\s*([A-Za-z0-9._-]+)/i);
-            const channelMatch = body.match(/channel:\s*(stable|testing|experimental)/i);
-            if (!versionMatch || !channelMatch) {
+            const version = process.env.VERSION;
+            const channel = process.env.CHANNEL[0];
+            if (!version || !channel) {
               core.setFailed('Version or channel not found or invalid.');
+              return;
             }
-            const channel = channelMatch[1];
             if (!["stable", "testing", "experimental"].includes(channel)) {
               core.setFailed('Invalid channel: ' + channel);
+              return;
             }
-            core.setOutput('version', versionMatch[1]);
+            core.setOutput('version', version);
             core.setOutput('channel', channel);
+        env:
+          VERSION: ${{ steps.form.outputs.version }}
+          CHANNEL: ${{ steps.form.outputs.channel }}
       - name: Download manifest
         run: |
-          curl -fsSL "$FIRMWARE_BASE_URL/${{ steps.issue.outputs.version }}/${{ steps.issue.outputs.channel }}/sysupgrade/${{ steps.issue.outputs.channel }}.manifest" -o manifest
+          curl -fsSL "$FIRMWARE_BASE_URL/${{ steps.validate.outputs.version }}/${{ steps.validate.outputs.channel }}/sysupgrade/${{ steps.validate.outputs.channel }}.manifest" -o manifest
         env:
           FIRMWARE_BASE_URL: ${{ vars.FIRMWARE_BASE_URL }}
       - name: Install ecdsautils
@@ -73,7 +81,11 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `Signature for manifest (Version: ${{ steps.issue.outputs.version }}, Channel: ${{ steps.issue.outputs.channel }}):\n\n\`\`\`\n${{ steps.sign.outputs.signature }}\n\`\`\``
+              body: `Signature for ${{ steps.validate.outputs.version }} [${{ steps.validate.outputs.channel }}.manifest]($FIRMWARE_BASE_URL/${{ steps.validate.outputs.version }}/${{ steps.validate.outputs.channel }}/sysupgrade/${{ steps.validate.outputs.channel }}.manifest):
+
+              \`\`\`
+              ${{ steps.sign.outputs.signature }}
+              \`\`\``
             })
       - name: Close issue
         uses: actions/github-script@v7
