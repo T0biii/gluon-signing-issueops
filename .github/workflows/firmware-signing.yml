@@ -82,7 +82,7 @@ jobs:
             core.setOutput('channel', channel);
       - name: Download manifest
         run: |
-          curl -fsSL "$FIRMWARE_BASE_URL/${{ steps.validate.outputs.version }}/${{ steps.validate.outputs.channel }}/sysupgrade/${{ steps.validate.outputs.channel }}.manifest" -o manifest
+          curl -fsSL "$FIRMWARE_BASE_URL/${{ steps.validate.outputs.version }}/sysupgrade/${{ steps.validate.outputs.channel }}.manifest" -o manifest
         env:
           FIRMWARE_BASE_URL: ${{ vars.FIRMWARE_BASE_URL }}
       - name: Install ecdsautils
@@ -108,7 +108,7 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `Signature for ${{ steps.validate.outputs.version }} [${{ steps.validate.outputs.channel }}.manifest]($FIRMWARE_BASE_URL/${{ steps.validate.outputs.version }}/${{ steps.validate.outputs.channel }}/sysupgrade/${{ steps.validate.outputs.channel }}.manifest):
+              body: `Signature for ${{ steps.validate.outputs.version }} [${{ steps.validate.outputs.channel }}.manifest]($FIRMWARE_BASE_URL/${{ steps.validate.outputs.version }}/sysupgrade/${{ steps.validate.outputs.channel }}.manifest):
 
               \`\`\`
               ${{ steps.sign.outputs.signature }}
