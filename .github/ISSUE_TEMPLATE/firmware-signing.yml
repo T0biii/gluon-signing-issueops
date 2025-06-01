@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         A new firmware requires a signature.
-        @repository-owner, please review the details and approve the signature by commenting "Approve signature".
+        -> repository owner, please review the details and approve the signature by commenting "Approve signature".
   - type: input
     id: version
     attributes:
