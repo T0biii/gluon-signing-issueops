@@ -96,7 +96,7 @@ jobs:
         run: |
           # Pass name of env var containing the private key
           signature=$(./sign.sh PRIVATE_KEY manifest)
-          echo "$signature" >> $GITHUB_OUTPUT
+          echo "signature=$signature" >> $GITHUB_OUTPUT
           cat manifest
         env:
           PRIVATE_KEY: ${{ secrets.FIRMWARE_SIGNING_KEY }}
