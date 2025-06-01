@@ -38,8 +38,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const issue_json_string = ${{ steps.form.outputs.json }};
-            const issue_data = JSON.parse(issue_json_string);
+            const issue_data = ${{ steps.form.outputs.json }}; Valid JSON -> Valid JavaScript object
             if (!issue_data.version || !issue_data.channel || issue_data.channel.length === 0) {
               core.setFailed('Version or channel not found');
               return;
