@@ -1,0 +1,77 @@
+name: "Sign Firmware Manifest"
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  sign-manifest:
+    if: |
+      github.event.issue.state == 'open' &&
+      contains(github.event.comment.body, 'Approve signature') &&
+      github.event.comment.author_association == 'OWNER'
+    runs-on: ubuntu-latest
+    env:
+      ECDSAUTILS_VERSION: v0.4.2
+
+    steps:
+      - name: Extract issue data
+        id: issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = github.event.issue || github.event.comment.issue;
+            const body = issue.body;
+            const versionMatch = body.match(/version:\s*([A-Za-z0-9._-]+)/i);
+            const channelMatch = body.match(/channel:\s*(stable|testing|experimental)/i);
+            if (!versionMatch || !channelMatch) {
+              core.setFailed('Version or channel not found or invalid.');
+            }
+            const channel = channelMatch[1];
+            if (!["stable", "testing", "experimental"].includes(channel)) {
+              core.setFailed('Invalid channel: ' + channel);
+            }
+            core.setOutput('version', versionMatch[1]);
+            core.setOutput('channel', channel);
+      - name: Download manifest
+        run: |
+          curl -fsSL "$FIRMWARE_BASE_URL/${{ steps.issue.outputs.version }}/${{ steps.issue.outputs.channel }}/sysupgrade/${{ steps.issue.outputs.channel }}.manifest" -o manifest
+        env:
+          FIRMWARE_BASE_URL: ${{ vars.FIRMWARE_BASE_URL }}
+      - name: Install ecdsautils
+        run: |
+          sudo apt-get update && sudo apt-get install -y build-essential autoconf automake libtool
+          curl -fsSL -o ecdsautils.tar.gz https://github.com/freifunk-gluon/ecdsautils/archive/refs/tags/${ECDSAUTILS_VERSION}.tar.gz
+          tar -xzf ecdsautils.tar.gz
+          cd ecdsautils-${ECDSAUTILS_VERSION#v} && make && sudo make install
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Sign manifest and extract signature
+        id: sign
+        run: |
+          # Pass name of env var containing the private key
+          signature=$(./sign.sh PRIVATE_KEY manifest)
+          echo "$signature" >> $GITHUB_OUTPUT
+          cat manifest
+        env:
+          PRIVATE_KEY: ${{ secrets.FIRMWARE_SIGNING_KEY }}
+      - name: Post signature as comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Signature for manifest (Version: ${{ steps.issue.outputs.version }}, Channel: ${{ steps.issue.outputs.channel }}):\n\n\`\`\`\n${{ steps.sign.outputs.signature }}\n\`\`\``
+            })
+      - name: Close issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.update({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'closed'
+            })

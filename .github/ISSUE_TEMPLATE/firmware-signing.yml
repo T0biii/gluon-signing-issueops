@@ -1,0 +1,28 @@
+name: Request firmware signature
+description: Request the signature of a Gluon firmware manifest.
+labels: [signing-request]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A new firmware requires a signature.
+        @repository-owner, please review the details and approve the signature by commenting "Approve signature".
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "Enter the firmware version (letters, numbers, dot, underscore, dash only)."
+      placeholder: "e.g. v2024.1.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Release channel
+      description: "Select the release channel."
+      options:
+        - stable
+        - testing
+        - experimental
+    validations:
+      required: true
