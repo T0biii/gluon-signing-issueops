@@ -105,16 +105,25 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const version = '${{ steps.validate.outputs.version }}';
+            const channel = '${{ steps.validate.outputs.channel }}';
+            const baseUrl = process.env.FIRMWARE_BASE_URL;
+            const manifestUrl = `${baseUrl}/${version}/sysupgrade/${channel}.manifest`;
+
+            const signature = '${{ steps.sign.outputs.signature }}';
+
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `Signature for ${{ steps.validate.outputs.version }} [${{ steps.validate.outputs.channel }}.manifest]($FIRMWARE_BASE_URL/${{ steps.validate.outputs.version }}/sysupgrade/${{ steps.validate.outputs.channel }}.manifest):
+              body: `Signature for ${version} [${channel}.manifest](${manifestUrl}):
 
-              \`\`\`
-              ${{ steps.sign.outputs.signature }}
-              \`\`\``
+            \`\`\`
+            ${signature}
+            \`\`\``
             })
+        env:
+          FIRMWARE_BASE_URL: ${{ vars.FIRMWARE_BASE_URL }}
       - name: Close issue
         uses: actions/github-script@v7
         with:
