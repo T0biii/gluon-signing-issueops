@@ -55,7 +55,7 @@ jobs:
         id: form
         uses: issue-ops/parser@v4
         with:
-          issue-form-template: firmware-signing.yml
+#          issue-form-template: firmware-signing.yml
           body: ${{ github.event.issue.body }}
       - name: Validate issue data
         id: validate
