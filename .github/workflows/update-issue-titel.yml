@@ -1,0 +1,65 @@
+name: "Update Issue Title on Open"
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  update-title:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
+      - name: Parse issue form
+        id: form
+        uses: issue-ops/parser@76d5aa095754de1493cbe41934484c4287e16350 #v4.2.0
+        with:
+          issue-form-template: firmware-signing.yml
+          body: ${{ github.event.issue.body }}
+
+      - name: Extract version and channel
+        id: extract
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd #v8.0.0
+        with:
+          script: |
+            const issue_data = ${{ steps.form.outputs.json }};
+            const version = issue_data.version || null;
+            const channel = (issue_data.channel && issue_data.channel.length > 0) ? issue_data.channel[0] : null;
+            core.setOutput('version', version);
+            core.setOutput('channel', channel);
+
+      - name: Update issue title placeholders
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd #v8.0.0
+        with:
+          script: |
+            const title = context.payload.issue.title;
+            let newTitle = title;
+            const version = '${{ steps.extract.outputs.version }}';
+            const channel = '${{ steps.extract.outputs.channel }}';
+
+            if (!version && !channel) {
+              core.info('No version or channel found in issue form, skipping title update.');
+              return;
+            }
+
+            // Ersetze {version} und {channel} im Titel, falls vorhanden
+            if (version) {
+              newTitle = newTitle.replace(/\{version\}/gi, version);
+            }
+            if (channel) {
+              newTitle = newTitle.replace(/\{channel\}/gi, channel);
+            }
+
+            // Wenn sich der Titel ändert, aktualisiere das Issue
+            if (newTitle !== title) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                title: newTitle
+              });
+              core.info(`Updated issue title to: ${newTitle}`);
+            } else {
+              core.info('No placeholders found in title, no update needed.');
+            }
