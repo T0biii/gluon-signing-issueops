@@ -1,15 +1,14 @@
 name: "Sign Firmware Manifest"
 
 on:
-  issue_comment:
-    types: [created]
+  issues:
+    types: [labeled]
 
 jobs:
   sign-manifest:
     if: |
       github.event.issue.state == 'open' &&
-      contains(github.event.comment.body, 'Approve signature') &&
-      github.event.comment.author_association == 'OWNER'
+      github.event.label.name == 'Sign'
     runs-on: ubuntu-latest
     env:
       ECDSAUTILS_VERSION: v0.4.2
