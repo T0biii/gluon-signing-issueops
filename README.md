@@ -11,8 +11,8 @@ This repository provides an automated GitHub IssueOps workflow for signing Gluon
   - **Release channel**: Select one of `stable`, `testing`, or `experimental`
 
 ### 2. Approving a Signature
-- The repository owner reviews the issue and, if appropriate, comments:
-  > Approve signature
+- The repository owner reviews the issue and, if appropriate, addes the label:
+  > Sign
 - The workflow will:
   - Download the manifest from the configured firmware URL
   - Sign the manifest using the private key
