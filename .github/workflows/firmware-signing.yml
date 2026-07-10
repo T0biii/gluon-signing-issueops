@@ -119,12 +119,12 @@ jobs:
 
             \`\`\`
             ${signature}
-            \`\`\``
+            \`\`\`
 
             Salt:
             \`\`\`
             docker exec -ti salt-salt-master-1 salt 'webfrontend*.in.ffmuc.net' cmd.shell 'echo ${signature} >> /srv/www/firmware.ffmuc.net/${version}/sysupgrade/${channel}.manifest
-            \`\`\`
+            \`\`\``
             })
         env:
           FIRMWARE_BASE_URL: ${{ vars.FIRMWARE_BASE_URL }}
