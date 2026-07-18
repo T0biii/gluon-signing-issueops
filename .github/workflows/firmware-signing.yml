@@ -4,63 +4,65 @@ on:
   issue_comment:
     types: [created]
 
+concurrency:
+  group: sign-manifest-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
 jobs:
   sign-manifest:
     if: |
       github.event.issue.state == 'open' &&
-      contains(github.event.comment.body, 'Approve signature') &&
+      startsWith(github.event.comment.body, 'Approve signature') &&
       github.event.comment.author_association == 'OWNER'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      issues: write
+      contents: read
+
     env:
       ECDSAUTILS_VERSION: v0.4.2
+      ECDSAUTILS_SHA256: "8880e5a506555a06d7a866de8a76c28bb4c7472abbf0d3fb396100d16c447174"
 
     steps:
-      - name: Check required repo variables
-        id: check-vars
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd #v8.0.0
-        with:
-          script: |
-            const requiredVars = ['FIRMWARE_BASE_URL', 'FIRMWARE_SIGNING_KEY'];
-            let missing = [];
-            for (const v of requiredVars) {
-              if (!process.env[v]) missing.push(v);
-            }
-
-            // React with thumbs down to alert of the problem.
-            if (missing.length > 0) {
-              github.rest.reactions.createForIssueComment({
-                comment_id: context.payload.comment.id,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                content: '-1'
-              });
-              core.setFailed('Missing required repository variables: ' + missing.join(', '));
-            }
+      - name: Check required secrets and variables
+        run: |
+          missing=()
+          [ -z "$FIRMWARE_BASE_URL" ]    && missing+=("FIRMWARE_BASE_URL")
+          [ -z "$FIRMWARE_SIGNING_KEY" ] && missing+=("FIRMWARE_SIGNING_KEY")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required repository configuration: ${missing[*]}"
+            exit 1
+          fi
         env:
           FIRMWARE_BASE_URL: ${{ vars.FIRMWARE_BASE_URL }}
           FIRMWARE_SIGNING_KEY: ${{ secrets.FIRMWARE_SIGNING_KEY }}
 
-      - name: Check out repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
       - name: React with thumbs up
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd #v8.0.0
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
-            github.rest.reactions.createForIssueComment({
+            await github.rest.reactions.createForIssueComment({
               comment_id: context.payload.comment.id,
               owner: context.repo.owner,
               repo: context.repo.repo,
               content: '+1'
             })
+
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
       - name: Parse issue form
         id: form
-        uses: issue-ops/parser@76d5aa095754de1493cbe41934484c4287e16350 #v4.2.0
+        uses: issue-ops/parser@76d5aa095754de1493cbe41934484c4287e16350 # v4.2.0
         with:
           issue-form-template: firmware-signing.yml
           body: ${{ github.event.issue.body }}
+
       - name: Validate issue data
         id: validate
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd #v8.0.0
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             const issue_data = ${{ steps.form.outputs.json }}; // Valid JSON -> Valid JavaScript object
@@ -70,6 +72,7 @@ jobs:
             }
             const version = issue_data.version;
             const channel = issue_data.channel[0];
+ 
             if (!/^[a-zA-Z0-9._-]+$/.test(version)) {
               core.setFailed('Invalid version format: ' + version);
               return;
@@ -80,62 +83,102 @@ jobs:
             }
             core.setOutput('version', version);
             core.setOutput('channel', channel);
+
       - name: Download manifest
         run: |
-          curl -fsSL "$FIRMWARE_BASE_URL/${{ steps.validate.outputs.version }}/sysupgrade/${{ steps.validate.outputs.channel }}.manifest" -o manifest
+          curl -fsSL "$FIRMWARE_BASE_URL/$VERSION/sysupgrade/$CHANNEL.manifest" -o manifest
         env:
           FIRMWARE_BASE_URL: ${{ vars.FIRMWARE_BASE_URL }}
+          VERSION: ${{ steps.validate.outputs.version }}
+          CHANNEL: ${{ steps.validate.outputs.channel }}
+
+      - name: Cache ecdsautils build
+        id: cache-ecdsautils
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: /usr/local
+          key: ecdsautils-${{ env.ECDSAUTILS_VERSION }}-${{ runner.os }}
+
       - name: Install ecdsautils
+        if: steps.cache-ecdsautils.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update && sudo apt-get install -y build-essential cmake libuecc-dev
-          curl -fsSL -o ecdsautils.tar.gz https://github.com/freifunk-gluon/ecdsautils/archive/refs/tags/${ECDSAUTILS_VERSION}.tar.gz
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libuecc-dev
+          curl -fsSL -o ecdsautils.tar.gz \
+            "https://github.com/freifunk-gluon/ecdsautils/archive/refs/tags/${ECDSAUTILS_VERSION}.tar.gz"
+          echo "${ECDSAUTILS_SHA256}  ecdsautils.tar.gz" | sha256sum -c -
           tar -xzf ecdsautils.tar.gz
-          cd ecdsautils-${ECDSAUTILS_VERSION#v} && mkdir build && cd build && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 .. && make && sudo make install
+          cd "ecdsautils-${ECDSAUTILS_VERSION#v}"
+          mkdir build && cd build
+          cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
+          make
+          sudo make install
+
       - name: Sign manifest and extract signature
         id: sign
         run: |
-          # Pass name of env var containing the private key
+          set -euo pipefail
           signature=$(./sign.sh PRIVATE_KEY manifest)
-          echo "signature=$signature" >> $GITHUB_OUTPUT
+          {
+            echo "signature<<SIGNATURE_EOF"
+            echo "$signature"
+            echo "SIGNATURE_EOF"
+          } >> "$GITHUB_OUTPUT"
           cat manifest
         env:
           PRIVATE_KEY: ${{ secrets.FIRMWARE_SIGNING_KEY }}
           LD_LIBRARY_PATH: /usr/local/lib
+
       - name: Post signature as comment
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd #v8.0.0
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
-            const version = '${{ steps.validate.outputs.version }}';
-            const channel = '${{ steps.validate.outputs.channel }}';
+            const version = ${{ toJSON(steps.validate.outputs.version) }};
+            const channel = ${{ toJSON(steps.validate.outputs.channel) }};
+            const signature = ${{ toJSON(steps.sign.outputs.signature) }};
             const baseUrl = process.env.FIRMWARE_BASE_URL;
             const manifestUrl = `${baseUrl}/${version}/sysupgrade/${channel}.manifest`;
 
-            const signature = '${{ steps.sign.outputs.signature }}';
-
-            github.rest.issues.createComment({
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `Signature for \`${version}\` [${channel}.manifest](${manifestUrl}):
-
-            \`\`\`
-            ${signature}
-            \`\`\`
-
-            Salt:
-            \`\`\`
-            docker exec -ti salt-salt-master-1 salt 'webfrontend*.in.ffmuc.net' cmd.shell 'echo ${signature} >> /srv/www/firmware.ffmuc.net/${version}/sysupgrade/${channel}.manifest'
-            \`\`\``
+              body: [
+                `Signature for \`${version}\` [${channel}.manifest](${manifestUrl}):`,
+                '',
+                '```',
+                signature,
+                '```',
+                '',
+                'Salt (Signatur vor dem Einfügen prüfen — Werte in Quotes belassen):',
+                '```',
+                `docker exec -ti salt-salt-master-1 salt 'webfrontend*.in.ffmuc.net' cmd.shell 'echo "${signature}" >> "/srv/www/firmware.ffmuc.net/${version}/sysupgrade/${channel}.manifest"'`,
+                '```'
+              ].join('\n')
             })
         env:
           FIRMWARE_BASE_URL: ${{ vars.FIRMWARE_BASE_URL }}
+
       - name: Close issue
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd #v8.0.0
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
-            github.rest.issues.update({
+            await github.rest.issues.update({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'closed'
+            })
+
+      - name: React with thumbs down on failure
+        if: failure()
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              comment_id: context.payload.comment.id,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              content: '-1'
             })
